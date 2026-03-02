@@ -1,4 +1,9 @@
-from robocorp.tasks import task
+try:
+    from robocorp.tasks import task
+except ModuleNotFoundError:
+    # Allow importing/running this module outside Robocorp runtime (e.g., local UI).
+    def task(func):
+        return func
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options

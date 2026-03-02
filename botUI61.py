@@ -2,28 +2,33 @@ import threading
 import traceback
 from datetime import date, datetime
 from pathlib import Path
+from typing import Tuple
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from tasks import (
-    CARATULAS_FOLDER_PATH,
-    EXCEL_INGRESO_DEMANDAS,
-    FECHA_FILTRO_CARATULAS,
-    run_get_caratulas,
+# Keep these defaults hardcoded in the UI so it can start even if task deps are missing.
+EXCEL_INGRESO_DEMANDAS_DEFAULT = (
+    "C:\\Applications\\RPA 06 - INGRESO DE DEMANDAS Y DOCUMENTOS EN PODER JUDICIAL\\input\\Itau_ddas_pjud\\BOT_MATRIZ_DEMANDAS.xlsx"
 )
+CARATULAS_FOLDER_PATH_DEFAULT = (
+    "C:\\Applications\\RPA 06 - INGRESO DE DEMANDAS Y DOCUMENTOS EN PODER JUDICIAL\\input\\Itau_ddas_pjud\\Caratulas"
+)
+FECHA_FILTRO_CARATULAS_DEFAULT = "24/02/2026"
 
 
 class BotUI61:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("BOT RPA 06.1 - Descarga de Caratulas")
-        self.root.minsize(900, 340)
+        self.root.minsize(980, 500)
+        self.root.configure(bg="#eef3f9")
+        self._configure_styles()
 
-        default_date = self._parse_default_date(FECHA_FILTRO_CARATULAS)
+        default_date = self._parse_default_date(FECHA_FILTRO_CARATULAS_DEFAULT)
 
-        self.excel_ingreso_var = tk.StringVar(value=EXCEL_INGRESO_DEMANDAS)
+        self.excel_ingreso_var = tk.StringVar(value=EXCEL_INGRESO_DEMANDAS_DEFAULT)
         self.excel_informe_var = tk.StringVar(value="")
-        self.caratulas_folder_var = tk.StringVar(value=CARATULAS_FOLDER_PATH)
+        self.caratulas_folder_var = tk.StringVar(value=CARATULAS_FOLDER_PATH_DEFAULT)
         self.day_var = tk.StringVar(value=f"{default_date.day:02d}")
         self.month_var = tk.StringVar(value=f"{default_date.month:02d}")
         self.year_var = tk.StringVar(value=f"{default_date.year:04d}")
@@ -31,35 +36,114 @@ class BotUI61:
 
         self._build_ui()
 
-    def _build_ui(self) -> None:
-        frame = ttk.Frame(self.root, padding=16)
-        frame.pack(fill="both", expand=True)
+    def _configure_styles(self) -> None:
+        style = ttk.Style(self.root)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
 
-        ttk.Label(frame, text="Excel Ingreso Demandas (hardcoded)").grid(
-            row=0, column=0, sticky="w"
+        style.configure("App.TFrame", background="#eef3f9")
+        style.configure("Card.TFrame", background="#ffffff", relief="flat")
+        style.configure(
+            "Title.TLabel",
+            background="#ffffff",
+            foreground="#16243a",
+            font=("Segoe UI", 14, "bold"),
         )
+        style.configure(
+            "Body.TLabel",
+            background="#ffffff",
+            foreground="#3a4b64",
+            font=("Segoe UI", 10),
+        )
+        style.configure(
+            "FieldLabel.TLabel",
+            background="#ffffff",
+            foreground="#1f2f4a",
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.configure(
+            "Status.TLabel",
+            background="#ffffff",
+            foreground="#2f3f57",
+            font=("Segoe UI", 10),
+        )
+        style.configure(
+            "Primary.TButton",
+            font=("Segoe UI", 10, "bold"),
+            padding=(14, 8),
+            foreground="#ffffff",
+            background="#1e63d5",
+            borderwidth=0,
+        )
+        style.map(
+            "Primary.TButton",
+            background=[("active", "#174ea8"), ("disabled", "#97b3e6")],
+            foreground=[("disabled", "#f5f7fb")],
+        )
+        style.configure(
+            "Secondary.TButton",
+            font=("Segoe UI", 9),
+            padding=(12, 6),
+        )
+
+    def _build_ui(self) -> None:
+        app = ttk.Frame(self.root, style="App.TFrame", padding=16)
+        app.pack(fill="both", expand=True)
+
+        info_card = ttk.Frame(app, style="Card.TFrame", padding=18)
+        info_card.pack(fill="x", pady=(0, 12))
+
+        ttk.Label(
+            info_card,
+            text="BOT RPA 06.1 | Descarga de Caratulas PJUD",
+            style="Title.TLabel",
+        ).pack(anchor="w")
+        ttk.Label(
+            info_card,
+            style="Body.TLabel",
+            wraplength=920,
+            text=(
+                "Este bot ingresa a PJUD, filtra 'Demandas Enviadas' por la fecha seleccionada, "
+                "descarga las caratulas PDF y genera un archivo final 'CaratulasUnidas.pdf' "
+                "en la carpeta de caratulas."
+            ),
+        ).pack(anchor="w", pady=(8, 0))
+
+        form_card = ttk.Frame(app, style="Card.TFrame", padding=18)
+        form_card.pack(fill="both", expand=True)
+
+        ttk.Label(
+            form_card, text="Excel Ingreso Demandas (hardcoded, solo lectura)", style="FieldLabel.TLabel"
+        ).grid(row=0, column=0, sticky="w")
         ttk.Entry(
-            frame, textvariable=self.excel_ingreso_var, state="readonly", width=110
+            form_card, textvariable=self.excel_ingreso_var, state="readonly", width=110
         ).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 12))
 
-        ttk.Label(frame, text="Excel Informe PJUD").grid(row=2, column=0, sticky="w")
-        ttk.Entry(frame, textvariable=self.excel_informe_var, width=90).grid(
+        ttk.Label(form_card, text="Excel Informe PJUD (obligatorio)", style="FieldLabel.TLabel").grid(
+            row=2, column=0, sticky="w"
+        )
+        ttk.Entry(form_card, textvariable=self.excel_informe_var, width=90).grid(
             row=3, column=0, sticky="ew", pady=(4, 12)
         )
-        ttk.Button(frame, text="Buscar .xlsx", command=self._browse_excel_informe).grid(
-            row=3, column=1, sticky="ew", padx=(8, 0), pady=(4, 12)
-        )
+        ttk.Button(
+            form_card,
+            text="Seleccionar archivo .xlsx",
+            style="Secondary.TButton",
+            command=self._browse_excel_informe,
+        ).grid(row=3, column=1, sticky="ew", padx=(8, 0), pady=(4, 12))
 
-        ttk.Label(frame, text="Carpeta Caratulas (hardcoded)").grid(
-            row=4, column=0, sticky="w"
-        )
+        ttk.Label(
+            form_card, text="Carpeta Caratulas (hardcoded, solo lectura)", style="FieldLabel.TLabel"
+        ).grid(row=4, column=0, sticky="w")
         ttk.Entry(
-            frame, textvariable=self.caratulas_folder_var, state="readonly", width=110
+            form_card, textvariable=self.caratulas_folder_var, state="readonly", width=110
         ).grid(row=5, column=0, columnspan=2, sticky="ew", pady=(4, 12))
 
-        ttk.Label(frame, text="Fecha Filtro").grid(row=6, column=0, sticky="w")
-        date_frame = ttk.Frame(frame)
-        date_frame.grid(row=7, column=0, sticky="w", pady=(4, 12))
+        ttk.Label(form_card, text="Fecha de filtro", style="FieldLabel.TLabel").grid(row=6, column=0, sticky="w")
+        date_frame = ttk.Frame(form_card, style="Card.TFrame")
+        date_frame.grid(row=7, column=0, sticky="w", pady=(4, 16))
 
         ttk.Combobox(
             date_frame,
@@ -68,7 +152,7 @@ class BotUI61:
             width=4,
             state="readonly",
         ).grid(row=0, column=0)
-        ttk.Label(date_frame, text="/").grid(row=0, column=1, padx=4)
+        ttk.Label(date_frame, text="/", style="Body.TLabel").grid(row=0, column=1, padx=4)
         ttk.Combobox(
             date_frame,
             textvariable=self.month_var,
@@ -76,7 +160,7 @@ class BotUI61:
             width=4,
             state="readonly",
         ).grid(row=0, column=2)
-        ttk.Label(date_frame, text="/").grid(row=0, column=3, padx=4)
+        ttk.Label(date_frame, text="/", style="Body.TLabel").grid(row=0, column=3, padx=4)
         current_year = date.today().year
         ttk.Combobox(
             date_frame,
@@ -86,17 +170,30 @@ class BotUI61:
             state="readonly",
         ).grid(row=0, column=4)
 
+        ttk.Label(
+            form_card,
+            style="Body.TLabel",
+            text=(
+                "Accion del boton: ejecuta la descarga de caratulas en PJUD para la fecha elegida, "
+                "renombra archivos y genera CaratulasUnidas.pdf."
+            ),
+            wraplength=920,
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 8))
+
         self.run_button = ttk.Button(
-            frame, text="Ejecutar Bot", command=self._on_run_clicked
+            form_card,
+            text="Iniciar descarga de caratulas desde PJUD",
+            style="Primary.TButton",
+            command=self._on_run_clicked,
         )
-        self.run_button.grid(row=8, column=0, sticky="w")
+        self.run_button.grid(row=9, column=0, sticky="w")
 
-        ttk.Label(frame, textvariable=self.status_var).grid(
-            row=9, column=0, columnspan=2, sticky="w", pady=(12, 0)
+        ttk.Label(form_card, textvariable=self.status_var, style="Status.TLabel").grid(
+            row=10, column=0, columnspan=2, sticky="w", pady=(12, 0)
         )
 
-        frame.columnconfigure(0, weight=1)
-        frame.columnconfigure(1, weight=0)
+        form_card.columnconfigure(0, weight=1)
+        form_card.columnconfigure(1, weight=0)
 
     def _browse_excel_informe(self) -> None:
         selected = filedialog.askopenfilename(
@@ -119,7 +216,7 @@ class BotUI61:
         validated = date(year, month, day)
         return validated.strftime("%d/%m/%Y")
 
-    def _validate_inputs(self) -> tuple[bool, str]:
+    def _validate_inputs(self) -> Tuple[bool, str]:
         excel_informe = self.excel_informe_var.get().strip()
         if not excel_informe:
             return False, "Debes seleccionar 'Excel Informe PJUD'."
@@ -167,6 +264,9 @@ class BotUI61:
 
     def _run_bot(self) -> None:
         try:
+            # Lazy import to avoid crashing the UI at startup when opening by double-click.
+            from tasks import run_get_caratulas
+
             run_get_caratulas(
                 excel_ingreso_demandas=self.excel_ingreso_var.get().strip(),
                 excel_informe_pjud=self.excel_informe_var.get().strip(),
