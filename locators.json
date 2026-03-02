@@ -1,0 +1,12 @@
+{
+    "openAFile": {
+        "type": "windows",
+        "value": "control:\"EditControl\" and name:\"File name:\"",
+        "window": "Oficina Judicial Virtual - Portal - Chromium",
+        "name": "openAFile",
+        "element": {
+            "tag": "EditControl"
+        },
+        "version": 1
+    }
+}
