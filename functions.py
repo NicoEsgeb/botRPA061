@@ -173,32 +173,63 @@ def read_excel_caratulas(
         if row["INGRESO"] == "OK" :
             RUT_INGRESO.append(str(row["ARCH_DEMANDA"]).replace('01_Demandas_firmadas\\','').split('_')[0].replace(".", "").upper())  
     
-    excel.close_workbook()  
-            
+    excel.close_workbook()
+
+    rut_ingreso_set = set(RUT_INGRESO)
+    caratulas_validas = {
+        rit_tribunal: rut
+        for rit_tribunal, rut in RIT_RUT.items()
+        if rut in rut_ingreso_set
+    }
+
+    salida_unida = os.path.join(CARATULAS_FOLDER_PATH, "CaratulasUnidas.pdf")
+    if os.path.isfile(salida_unida):
+        os.remove(salida_unida)
+
+    archivos_para_unir = []
+
+    for file in glob.glob(os.path.join(CARATULAS_FOLDER_PATH, "*.pdf")):
+        base = os.path.splitext(os.path.basename(file))[0]
+
+        if base == "CaratulasUnidas":
+            os.remove(file)
+            continue
+
+        if base in caratulas_validas:
+            nuevo = f"{caratulas_validas[base]}-{base}"
+            destino = os.path.join(CARATULAS_FOLDER_PATH, nuevo + ".pdf")
+            if os.path.abspath(file) != os.path.abspath(destino):
+                if os.path.isfile(destino):
+                    os.remove(destino)
+                os.rename(file, destino)
+            archivos_para_unir.append(destino)
+            continue
+
+        # Handle already-renamed files from this/previous runs: <RUT>-C-<RIT>-<Tribunal>
+        if "-C-" in base:
+            rut_prefix, rit_tail = base.split("-C-", 1)
+            rit_tribunal = f"C-{rit_tail}"
+            if (
+                rit_tribunal in caratulas_validas
+                and rut_prefix.upper() == caratulas_validas[rit_tribunal].upper()
+            ):
+                archivos_para_unir.append(file)
+            else:
+                os.remove(file)
+            continue
+
+        if base.startswith("C-"):
+            os.remove(file)
+
+    lista_ordenada = sorted(set(archivos_para_unir))
     merger = PdfWriter()
-
-    for file in glob.glob(CARATULAS_FOLDER_PATH+"\*.pdf") :
-        if RIT_RUT.keys().__contains__(file.replace(CARATULAS_FOLDER_PATH, '').replace("\\",'').replace(".pdf",'')) :
-            if (RUT_INGRESO.__contains__(RIT_RUT[file.replace(CARATULAS_FOLDER_PATH, '').replace("\\",'').replace(".pdf",'')])) :            
-                nuevo = RIT_RUT[file.replace(CARATULAS_FOLDER_PATH, '').replace("\\",'').replace(".pdf",'')] + "-" + file.replace(CARATULAS_FOLDER_PATH, '').replace("\\",'').replace(".pdf",'')
-                if os.path.isfile(os.path.join(CARATULAS_FOLDER_PATH, nuevo + ".pdf")) :
-                    os.remove(os.path.join(CARATULAS_FOLDER_PATH, nuevo + ".pdf"))
-               
-                os.rename(file, os.path.join(CARATULAS_FOLDER_PATH, nuevo + ".pdf"))
-            else :
-                if (file.replace(CARATULAS_FOLDER_PATH, '').replace("\\",'').replace(".pdf",'').startswith("C-")) :
-                    os.remove(file)
-                pass
-        
-    lista_ordenada = sorted(glob.glob(CARATULAS_FOLDER_PATH+"\*.pdf"))
-    for file in lista_ordenada :
+    for file in lista_ordenada:
         merger.append(fileobj=file, pages=(0, 1))
-    
-    # Write to an output PDF document
-    output = open(CARATULAS_FOLDER_PATH+"\CaratulasUnidas.pdf", "wb")
-    merger.write(output)
 
-    # Close file descriptors
+    if lista_ordenada:
+        output = open(salida_unida, "wb")
+        merger.write(output)
+        output.close()
+
     merger.close()
-    output.close()
     print('Done Descarga Caratulas')

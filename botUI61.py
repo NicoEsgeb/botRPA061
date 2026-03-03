@@ -33,6 +33,8 @@ class BotUI61:
         self.month_var = tk.StringVar(value=f"{default_date.month:02d}")
         self.year_var = tk.StringVar(value=f"{default_date.year:04d}")
         self.status_var = tk.StringVar(value="Listo para ejecutar.")
+        self.run_button = None
+        self.download_informe_button = None
 
         self._build_ui()
 
@@ -86,6 +88,19 @@ class BotUI61:
             "Secondary.TButton",
             font=("Segoe UI", 9),
             padding=(12, 6),
+        )
+        style.configure(
+            "AltPrimary.TButton",
+            font=("Segoe UI", 10, "bold"),
+            padding=(14, 8),
+            foreground="#ffffff",
+            background="#0f8a6c",
+            borderwidth=0,
+        )
+        style.map(
+            "AltPrimary.TButton",
+            background=[("active", "#0c6b54"), ("disabled", "#8ec8ba")],
+            foreground=[("disabled", "#f5f7fb")],
         )
 
     def _build_ui(self) -> None:
@@ -174,22 +189,43 @@ class BotUI61:
             form_card,
             style="Body.TLabel",
             text=(
-                "Accion del boton: ejecuta la descarga de caratulas en PJUD para la fecha elegida, "
-                "renombra archivos y genera CaratulasUnidas.pdf."
+                "Accion 1: descarga caratulas desde PJUD para la fecha elegida, renombra archivos "
+                "y genera CaratulasUnidas.pdf."
             ),
             wraplength=920,
-        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 6))
+
+        ttk.Label(
+            form_card,
+            style="Body.TLabel",
+            text=(
+                "Accion 2: exporta el Excel 'Demandas Enviadas' desde PJUD. "
+                "Ese archivo tambien se descarga en la carpeta de caratulas mostrada arriba."
+            ),
+            wraplength=920,
+        ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(0, 10))
+
+        actions_frame = ttk.Frame(form_card, style="Card.TFrame")
+        actions_frame.grid(row=10, column=0, columnspan=2, sticky="w")
 
         self.run_button = ttk.Button(
-            form_card,
+            actions_frame,
             text="Iniciar descarga de caratulas desde PJUD",
             style="Primary.TButton",
             command=self._on_run_clicked,
         )
-        self.run_button.grid(row=9, column=0, sticky="w")
+        self.run_button.grid(row=0, column=0, sticky="w")
+
+        self.download_informe_button = ttk.Button(
+            actions_frame,
+            text="Descargar Informe PJUD (Excel)",
+            style="AltPrimary.TButton",
+            command=self._on_download_informe_clicked,
+        )
+        self.download_informe_button.grid(row=0, column=1, sticky="w", padx=(10, 0))
 
         ttk.Label(form_card, textvariable=self.status_var, style="Status.TLabel").grid(
-            row=10, column=0, columnspan=2, sticky="w", pady=(12, 0)
+            row=11, column=0, columnspan=2, sticky="w", pady=(12, 0)
         )
 
         form_card.columnconfigure(0, weight=1)
@@ -256,10 +292,26 @@ class BotUI61:
             messagebox.showerror("Datos invalidos", error_message)
             return
 
-        self.run_button.configure(state="disabled")
+        self._set_running_state(True)
         self.status_var.set("Ejecutando bot... Esto puede tardar varios minutos.")
 
         thread = threading.Thread(target=self._run_bot, daemon=True)
+        thread.start()
+
+    def _on_download_informe_clicked(self) -> None:
+        path_caratulas = Path(self.caratulas_folder_var.get().strip())
+        if not path_caratulas.exists() or not path_caratulas.is_dir():
+            messagebox.showerror(
+                "Datos invalidos",
+                "No existe la carpeta hardcoded 'Carpeta Caratulas'. "
+                f"Ruta actual: {path_caratulas}",
+            )
+            return
+
+        self._set_running_state(True)
+        self.status_var.set("Descargando Informe PJUD... Esto puede tardar varios minutos.")
+
+        thread = threading.Thread(target=self._run_download_informe, daemon=True)
         thread.start()
 
     def _run_bot(self) -> None:
@@ -282,8 +334,39 @@ class BotUI61:
 
         self.root.after(0, lambda: self._handle_finish(True, "Ejecucion finalizada."))
 
+    def _run_download_informe(self) -> None:
+        try:
+            # Lazy import to avoid crashing the UI at startup when opening by double-click.
+            from tasks import RPA_06_DescargarInformePjud
+
+            RPA_06_DescargarInformePjud()
+        except Exception as exc:
+            error_detail = f"{exc}\n\n{traceback.format_exc()}"
+            self.root.after(
+                0,
+                lambda: self._handle_finish(
+                    False, f"Error al descargar Informe PJUD:\n{error_detail}"
+                ),
+            )
+            return
+
+        self.root.after(
+            0,
+            lambda: self._handle_finish(
+                True,
+                "Informe PJUD descargado. Revisa la carpeta de caratulas mostrada en esta UI.",
+            ),
+        )
+
+    def _set_running_state(self, is_running: bool) -> None:
+        state = "disabled" if is_running else "normal"
+        if self.run_button is not None:
+            self.run_button.configure(state=state)
+        if self.download_informe_button is not None:
+            self.download_informe_button.configure(state=state)
+
     def _handle_finish(self, success: bool, message: str) -> None:
-        self.run_button.configure(state="normal")
+        self._set_running_state(False)
         if success:
             self.status_var.set("Proceso terminado.")
             messagebox.showinfo("BOT RPA 06.1", message)
